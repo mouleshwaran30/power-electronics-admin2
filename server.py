@@ -7,7 +7,6 @@ latest_data = {"groups": []}
 approval_status = {"approved": False}
 
 ADMIN_PASSWORD = "college123"
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ================= HOME =================
@@ -85,13 +84,26 @@ button { font-size: 18px; padding: 12px 36px; border-radius: 8px;
 #rejectBtn  { background: #cc2200; color: white; }
 #canvasWrapper { border: 2px solid #444; border-radius: 8px; overflow: hidden; max-width: 95vw; }
 canvas { display: block; max-width: 100%; height: auto; }
+
+#legend {
+    display: flex; gap: 24px; margin: 12px 0;
+    font-size: 14px; font-weight: bold;
+}
+.leg { display: flex; align-items: center; gap: 8px; }
+.dot { width: 18px; height: 6px; border-radius: 3px; }
+.dot-correct { background: #00cc55; }
+.dot-wrong   { background: #ff3333; }
+
 #groupList {
-    margin-top: 16px; background: #1a1a1a; border: 1px solid #333;
+    margin-top: 12px; background: #1a1a1a; border: 1px solid #333;
     border-radius: 8px; padding: 14px 20px;
     width: 100%; max-width: 900px; font-size: 14px;
 }
 #groupList h3 { margin-bottom: 8px; color: #aaa; }
-.group-row { padding: 4px 0; border-bottom: 1px solid #2a2a2a; color: #ddd; }
+.group-row { padding: 5px 0; border-bottom: 1px solid #2a2a2a; }
+.group-row:last-child { border-bottom: none; }
+.tag-correct { color: #00ee66; font-weight: bold; }
+.tag-wrong   { color: #ff4444; font-weight: bold; }
 </style>
 </head>
 <body>
@@ -102,6 +114,11 @@ canvas { display: block; max-width: 100%; height: auto; }
 <div class="btn-row">
   <button id="approveBtn" onclick="doApprove()">✅ Approve</button>
   <button id="rejectBtn"  onclick="doReject()">❌ Reject</button>
+</div>
+
+<div id="legend">
+  <div class="leg"><div class="dot dot-correct"></div> Correct Connection</div>
+  <div class="leg"><div class="dot dot-wrong"></div> Wrong Connection</div>
 </div>
 
 <div id="canvasWrapper">
@@ -121,41 +138,113 @@ const groupRows = document.getElementById("groupRows");
 
 let nodePositions = {};
 let hasData = false;
-let SRC_W = 1200, SRC_H = 800;  // will be updated once image loads
+let SRC_W = 1200, SRC_H = 800;
 
-// ── Board image — served directly from /board.jpg ─────────────────────────
+// ── Correct groups (exact match) — ported from Python ────────────────────
+const CORRECT_GROUPS = [
+    new Set(["12","13","17","20","6"]),
+    new Set(["12","13","17","19","6"]),
+    new Set(["18","21","4","8","9"]),
+    new Set(["18","22","4","8","9"]),
+    new Set(["14","2","23","3","7"]),
+    new Set(["14","2","25","3","7"]),
+    new Set(["1","10","11","24","5"]),
+    new Set(["1","10","11","26","5"]),
+    new Set(["15","30"]),
+    new Set(["15","31"]),
+    new Set(["15","30","31"]),
+    new Set(["16","32"]),
+    new Set(["16","33"]),
+    new Set(["16","32","33"]),
+    new Set(["16","30"]),
+    new Set(["16","31"]),
+    new Set(["15","32"]),
+    new Set(["15","33"]),
+];
+
+function setsEqual(a, b) {
+    if (a.size !== b.size) return false;
+    for (let x of a) if (!b.has(x)) return false;
+    return true;
+}
+
+function isGroupCorrect(group) {
+    let gs = new Set(group.map(String));
+    return CORRECT_GROUPS.some(cg => setsEqual(cg, gs));
+}
+
+// ── Hub logic — exact port from Python ───────────────────────────────────
+const HUB_NODES = new Set(["3","4","5","6","15","16"]);
+const BASE_CHAINS = [
+    ["23","2","3"], ["25","2","3"],
+    ["24","1","5"], ["26","1","5"],
+    ["6","17","19"], ["4","18","22"],
+    ["15","30"], ["15","31"], ["15","30","31"],
+    ["16","32"], ["16","33"], ["16","32","33"],
+];
+
+function isSubset(small, big) {
+    for (let x of small) if (!big.has(x)) return false;
+    return true;
+}
+
+function groupToEdges(group) {
+    let nodes = group.map(String);
+    if (nodes.length < 2) return [];
+    let edges = [];
+    let nodeSet = new Set(nodes);
+
+    // Exact chain match
+    for (let chain of BASE_CHAINS) {
+        if (setsEqual(new Set(chain), nodeSet)) {
+            for (let i = 0; i < chain.length - 1; i++)
+                edges.push([chain[i], chain[i+1]]);
+            return edges;
+        }
+    }
+    // Subset chain match
+    for (let chain of BASE_CHAINS) {
+        if (isSubset(new Set(chain), nodeSet)) {
+            for (let i = 0; i < chain.length - 1; i++)
+                edges.push([chain[i], chain[i+1]]);
+            let hub = null;
+            for (let n of chain) if (HUB_NODES.has(n)) hub = n;
+            for (let n of nodes) if (!chain.includes(n)) edges.push([hub, n]);
+            return edges;
+        }
+    }
+    // Fallback: hub star or chain
+    let hubIndex = nodes.findIndex(n => HUB_NODES.has(n));
+    if (hubIndex === -1) {
+        for (let i = 0; i < nodes.length - 1; i++)
+            edges.push([nodes[i], nodes[i+1]]);
+        return edges;
+    }
+    for (let i = 0; i < hubIndex; i++)
+        edges.push([nodes[i], nodes[i+1]]);
+    let hub = nodes[hubIndex];
+    for (let i = hubIndex + 1; i < nodes.length; i++)
+        edges.push([hub, nodes[i]]);
+    return edges;
+}
+
+// ── Board image ───────────────────────────────────────────────────────────
 const img = new Image();
 img.crossOrigin = "anonymous";
 img.src = "/board.jpg";
-
-img.onload = function() {
-    console.log("✅ board.jpg loaded:", img.naturalWidth, img.naturalHeight);
-    // Set canvas to exact image size — NO stretching
-    SRC_W = img.naturalWidth;
-    SRC_H = img.naturalHeight;
-    canvas.width  = SRC_W;
-    canvas.height = SRC_H;
-    init();
-};
-img.onerror = function() {
-    console.warn("⚠️ board.jpg failed to load");
-    canvas.width  = 900;
-    canvas.height = 900;
-    init();
-};
+img.onload  = () => { SRC_W = img.naturalWidth; SRC_H = img.naturalHeight;
+                       canvas.width = SRC_W; canvas.height = SRC_H; init(); };
+img.onerror = () => { canvas.width = 900; canvas.height = 900; init(); };
 
 function scaleX(x) { return x * canvas.width  / SRC_W; }
 function scaleY(y) { return y * canvas.height / SRC_H; }
 
 function drawBoard() {
-    if (img.complete && img.naturalWidth > 0) {
+    if (img.complete && img.naturalWidth > 0)
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    } else {
+    else {
         ctx.fillStyle = "#1a1a1a";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "#555";
-        ctx.font = "20px Arial";
-        ctx.fillText("board.jpg not found", 300, 400);
     }
 }
 
@@ -166,19 +255,16 @@ function drawNodes() {
         let cx = scaleX(x), cy = scaleY(y);
         ctx.beginPath();
         ctx.arc(cx, cy, 10, 0, 2 * Math.PI);
-        ctx.strokeStyle = "red";
-        ctx.lineWidth = 2.5;
-        ctx.stroke();
+        ctx.strokeStyle = "red"; ctx.lineWidth = 2.5; ctx.stroke();
         ctx.beginPath();
         ctx.arc(cx, cy, 4, 0, 2 * Math.PI);
-        ctx.fillStyle = "black";
-        ctx.fill();
+        ctx.fillStyle = "black"; ctx.fill();
         ctx.fillStyle = "lime";
         ctx.fillText(n, cx + 13, cy - 4);
     }
 }
 
-function drawWire(a, b) {
+function drawWire(a, b, color) {
     let ka = String(a), kb = String(b);
     if (!nodePositions[ka] || !nodePositions[kb]) return;
     let [x1, y1] = nodePositions[ka];
@@ -188,25 +274,25 @@ function drawWire(a, b) {
     let dx = (sx2 - sx1) * 0.5;
     ctx.beginPath();
     ctx.moveTo(sx1, sy1);
-    ctx.bezierCurveTo(sx1 + dx, sy1, sx1 + dx, sy2, sx2, sy2);
-    ctx.strokeStyle = "#ffcc00";
-    ctx.lineWidth = 5;
-    ctx.lineCap = "round";
-    ctx.stroke();
-}
-
-function drawGroups(groups) {
-    groups.forEach(g => {
-        for (let i = 0; i < g.length - 1; i++) {
-            drawWire(g[i], g[i + 1]);
-        }
-    });
+    ctx.bezierCurveTo(sx1+dx, sy1, sx1+dx, sy2, sx2, sy2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 5; ctx.lineCap = "round"; ctx.stroke();
 }
 
 function renderCanvas(groups) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawBoard();
-    drawGroups(groups);
+    // Draw each group with correct color
+    let seen = new Set();
+    groups.forEach(g => {
+        let correct = isGroupCorrect(g);
+        let color   = correct ? "#00cc55" : "#ff3333";
+        let edges   = groupToEdges(g);
+        edges.forEach(([a, b]) => {
+            let key = a < b ? a+"-"+b : b+"-"+a;
+            if (!seen.has(key)) { seen.add(key); drawWire(a, b, color); }
+        });
+    });
     drawNodes();
 }
 
@@ -215,28 +301,30 @@ function showGroups(groups) {
         groupRows.innerHTML = "<span style='color:#555'>None yet</span>";
         return;
     }
-    groupRows.innerHTML = groups.map((g, i) =>
-        `<div class="group-row">Group ${i + 1}: [ ${g.join(" → ")} ]</div>`
-    ).join("");
+    groupRows.innerHTML = groups.map((g, i) => {
+        let correct = isGroupCorrect(g);
+        let tag = correct
+            ? "<span class='tag-correct'>✅ CORRECT</span>"
+            : "<span class='tag-wrong'>❌ WRONG</span>";
+        return `<div class="group-row">Group ${i+1}: [ ${g.join(" → ")} ] &nbsp; ${tag}</div>`;
+    }).join("");
 }
 
 function update() {
-    fetch("/data")
-        .then(r => r.json())
-        .then(d => {
-            let groups = d.groups || [];
-            renderCanvas(groups);
-            showGroups(groups);
-            if (groups.length > 0 && !hasData) {
-                hasData = true;
-                statusBar.textContent = "🔌 Student wiring received! Review and Approve / Reject.";
-                statusBar.className = "received";
-            } else if (groups.length === 0) {
-                hasData = false;
-                statusBar.textContent = "⏳ Waiting for student submission...";
-                statusBar.className = "";
-            }
-        });
+    fetch("/data").then(r => r.json()).then(d => {
+        let groups = d.groups || [];
+        renderCanvas(groups);
+        showGroups(groups);
+        if (groups.length > 0 && !hasData) {
+            hasData = true;
+            statusBar.textContent = "🔌 Student wiring received! Review and Approve / Reject.";
+            statusBar.className = "received";
+        } else if (groups.length === 0) {
+            hasData = false;
+            statusBar.textContent = "⏳ Waiting for student submission...";
+            statusBar.className = "";
+        }
+    });
 }
 
 function doApprove() {
@@ -245,7 +333,6 @@ function doApprove() {
         statusBar.className = "approved";
     });
 }
-
 function doReject() {
     fetch("/reject").then(() => {
         statusBar.textContent = "❌ REJECTED — Student notified.";
@@ -258,18 +345,14 @@ function init() {
         .then(r => r.json())
         .then(data => { nodePositions = data; })
         .catch(e => console.warn("socket_positions failed:", e))
-        .finally(() => {
-            renderCanvas([]);
-            update();
-            setInterval(update, 1500);
-        });
+        .finally(() => { renderCanvas([]); update(); setInterval(update, 1500); });
 }
 </script>
 </body>
 </html>
 """)
 
-# ================= SERVE board.jpg DIRECTLY =================
+# ================= SERVE board.jpg =================
 @app.route("/board.jpg")
 def board_image():
     return send_from_directory(BASE_DIR, "board.jpg")
