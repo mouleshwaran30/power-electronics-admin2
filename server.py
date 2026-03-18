@@ -83,8 +83,8 @@ button { font-size: 18px; padding: 12px 36px; border-radius: 8px;
          cursor: pointer; border: none; font-weight: bold; }
 #approveBtn { background: #00cc55; color: white; }
 #rejectBtn  { background: #cc2200; color: white; }
-#canvasWrapper { border: 2px solid #444; border-radius: 8px; overflow: hidden; }
-canvas { display: block; }
+#canvasWrapper { border: 2px solid #444; border-radius: 8px; overflow: hidden; max-width: 95vw; }
+canvas { display: block; max-width: 100%; height: auto; }
 #groupList {
     margin-top: 16px; background: #1a1a1a; border: 1px solid #333;
     border-radius: 8px; padding: 14px 20px;
@@ -105,7 +105,7 @@ canvas { display: block; }
 </div>
 
 <div id="canvasWrapper">
-  <canvas id="canvas" width="1100" height="750"></canvas>
+  <canvas id="canvas"></canvas>
 </div>
 
 <div id="groupList">
@@ -121,6 +121,7 @@ const groupRows = document.getElementById("groupRows");
 
 let nodePositions = {};
 let hasData = false;
+let SRC_W = 1200, SRC_H = 800;  // will be updated once image loads
 
 // ── Board image — served directly from /board.jpg ─────────────────────────
 const img = new Image();
@@ -129,15 +130,22 @@ img.src = "/board.jpg";
 
 img.onload = function() {
     console.log("✅ board.jpg loaded:", img.naturalWidth, img.naturalHeight);
+    // Set canvas to exact image size — NO stretching
+    SRC_W = img.naturalWidth;
+    SRC_H = img.naturalHeight;
+    canvas.width  = SRC_W;
+    canvas.height = SRC_H;
     init();
 };
 img.onerror = function() {
     console.warn("⚠️ board.jpg failed to load");
+    canvas.width  = 900;
+    canvas.height = 900;
     init();
 };
 
-function scaleX(x) { return x * canvas.width  / 1200; }
-function scaleY(y) { return y * canvas.height / 800;  }
+function scaleX(x) { return x * canvas.width  / SRC_W; }
+function scaleY(y) { return y * canvas.height / SRC_H; }
 
 function drawBoard() {
     if (img.complete && img.naturalWidth > 0) {
@@ -147,7 +155,7 @@ function drawBoard() {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = "#555";
         ctx.font = "20px Arial";
-        ctx.fillText("board.jpg not found", 400, 375);
+        ctx.fillText("board.jpg not found", 300, 400);
     }
 }
 
