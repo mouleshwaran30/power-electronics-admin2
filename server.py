@@ -37,30 +37,23 @@ def login():
     if request.form["password"] != ADMIN_PASSWORD:
         return "Wrong Password"
 
-    return render_template_string("""
+   return render_template_string("""
+
 <!DOCTYPE html>
+
 <html>
 <head>
-<title>Admin Wiring Monitor</title>
+<title>Real Wiring Monitor</title>
 
 <style>
 body {
-    background:#111;
+    background:black;
     color:white;
     text-align:center;
     font-family:Arial;
 }
-
 canvas {
-    background:#000;
     border:2px solid white;
-}
-
-button {
-    margin:10px;
-    padding:10px 20px;
-    font-size:16px;
-    cursor:pointer;
 }
 </style>
 
@@ -68,40 +61,39 @@ button {
 
 <body>
 
-<h2>⚡ Live Wiring Monitor</h2>
+<h2>⚡ Real Wiring Monitor</h2>
 
-<button onclick="approve()">Approve</button>
-<button onclick="reject()">Reject</button>
+<button onclick="approve()">Approve</button> <button onclick="reject()">Reject</button>
 
 <br><br>
 
-<canvas id="canvas" width="1000" height="700"></canvas>
+<canvas id="canvas" width="1200" height="800"></canvas>
 
 <script>
 
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
-// 🔥 Node positions (adjust to match your board)
+// BOARD IMAGE
+const img = new Image();
+img.src = "/static/board.jpg";
+
+// NODE POSITIONS
 const nodePositions = {
-    "1":[100,100], "2":[200,100], "3":[300,100],
-    "4":[400,100], "5":[500,100], "6":[600,100],
-
-    "7":[100,200], "8":[200,200], "9":[300,200],
-    "10":[400,200], "11":[500,200], "12":[600,200],
-
-    "13":[100,300], "14":[200,300], "15":[300,300],
-    "16":[400,300], "17":[500,300], "18":[600,300],
-
-    "19":[100,400], "20":[200,400], "21":[300,400],
-    "22":[400,400], "23":[500,400], "24":[600,400],
-
-    "25":[200,500], "26":[400,500],
-    "30":[300,550], "31":[500,550],
-    "32":[200,600], "33":[400,600]
+ "1":[120,100], "2":[240,100], "3":[360,100],
+ "4":[480,100], "5":[600,100], "6":[720,100],
+ "7":[120,200], "8":[240,200], "9":[360,200],
+ "10":[480,200], "11":[600,200], "12":[720,200],
+ "13":[120,300], "14":[240,300], "15":[360,300],
+ "16":[480,300], "17":[600,300], "18":[720,300],
+ "19":[120,400], "20":[240,400], "21":[360,400],
+ "22":[480,400], "23":[600,400], "24":[720,400],
+ "25":[240,500], "26":[480,500],
+ "30":[360,600], "31":[600,600],
+ "32":[240,700], "33":[480,700]
 };
 
-// Draw nodes
+// DRAW NODES
 function drawNodes(){
     for(let n in nodePositions){
         let [x,y] = nodePositions[n];
@@ -116,21 +108,23 @@ function drawNodes(){
     }
 }
 
-// Draw wire
+// CURVED WIRES
 function drawWire(a,b){
     let [x1,y1] = nodePositions[a];
     let [x2,y2] = nodePositions[b];
 
+    let dx = (x2 - x1) * 0.5;
+
     ctx.beginPath();
     ctx.moveTo(x1,y1);
-    ctx.lineTo(x2,y2);
+    ctx.bezierCurveTo(x1+dx,y1, x1+dx,y2, x2,y2);
 
     ctx.strokeStyle="yellow";
-    ctx.lineWidth=4;
+    ctx.lineWidth=5;
     ctx.stroke();
 }
 
-// Draw groups
+// DRAW GROUPS
 function drawGroups(groups){
     groups.forEach(group=>{
         for(let i=0;i<group.length-1;i++){
@@ -139,14 +133,20 @@ function drawGroups(groups){
     });
 }
 
-// Load live data
+// RENDER
+function render(groups){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    drawNodes();
+    drawGroups(groups);
+}
+
+// LIVE DATA
 function loadData(){
     fetch('/data')
     .then(r=>r.json())
     .then(d=>{
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-        drawNodes();
-        drawGroups(d.groups || []);
+        render(d.groups || []);
     });
 }
 
@@ -159,7 +159,16 @@ function reject(){ fetch('/reject'); }
 
 </body>
 </html>
-    """)
+""")
+
+# 🔥 ADD HERE (JUST ABOVE /data)
+
+from flask import send_from_directory
+import os
+
+@app.route('/static/<path:filename>')
+def static_files(filename):
+    return send_from_directory(os.getcwd(), filename)
 
 # ─────────────────────────────────────────────
 @app.route("/data")
